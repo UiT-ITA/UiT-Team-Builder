@@ -1,0 +1,83 @@
+﻿@page "/fetchdata"
+
+@using UiTTeamBuilder.Data
+@using Microsoft.Identity.Client;
+@using Newtonsoft.Json;
+@using Newtonsoft.Json.Linq;
+@inject IConfiguration _configuration
+@inject GraphCode.ProtectedApiCallHelper ProtectedApiCallHelper
+
+<h1>Weather forecast</h1>
+
+<p>This component demonstrates fetching data from a service.</p>
+
+@if (colGraphUsers == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Temp. (C)</th>
+                <th>Temp. (F)</th>
+                <th>Summary</th>
+            </tr>
+        </thead>
+        <tbody>
+          
+        </tbody>
+    </table>
+}
+
+@code {
+    List<GraphCode.GraphUser> colGraphUsers = new List<GraphCode.GraphUser>();
+    string strError = "";
+    string UserId = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            IConfidentialClientApplication confidentialClientApplication = ConfidentialClientApplicationBuilder
+                .Create(_configuration["AzureAd:ClientId"])
+                .WithTenantId(_configuration["AzureAd:TenantId"])
+                .WithClientSecret(_configuration["AzureAd:ClientSecret"])
+                .Build();
+            // With client credentials flows the scopes is ALWAYS of the shape "resource/.default", as the application permissions need to be set statically (in the portal or by PowerShell), and then granted by a tenant administrator
+
+            string[] scopes = new string[] { "https://graph.microsoft.com/.default" };
+            AuthenticationResult result = null;
+            result = await confidentialClientApplication.AcquireTokenForClient(scopes)
+            .ExecuteAsync();
+
+            var httpClient = new HttpClient();
+            var apiCaller = new GraphCode.ProtectedApiCallHelper(httpClient);
+            await apiCaller
+                .CallWebApiAndProcessResultASync("https://graph.microsoft.com/v1.0/users", result.AccessToken, DisplayUsers);
+        }
+        catch (Exception ex)
+        {
+            strError = ex.GetBaseException().Message;
+        }
+    }
+
+    private void DisplayUsers(JObject result)
+    {
+        colGraphUsers = new List<GraphCode.GraphUser>();
+        foreach (JProperty child in result.Properties()
+            .Where(p => !p.Name.StartsWith("@")))
+        {
+            colGraphUsers.AddRange(
+                child.Value.ToObject<List<GraphCode.GraphUser>>()
+                );
+        }
+        // If there are users set the first as the default
+        if (colGraphUsers.Count > 0)
+        {
+            UserId = colGraphUsers.OrderBy(x => x.displayName).FirstOrDefault().id;
+        }
+    }
+}
